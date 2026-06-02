@@ -1,0 +1,216 @@
+const {
+Client,
+EmbedBuilder
+} = require('discord.js');
+
+const Gamedig = require('gamedig');
+
+const TOKEN = process.env.TOKEN;
+const CHANNEL_ID = process.env.CHANNEL_ID;
+
+const HOST = 'play.astrixcity.com';
+const PORT = 7777;
+
+// Change this to your daily restart time
+const RESTART_HOUR = 6; // 06:00 UTC
+
+const client = new Client({
+intents: []
+});
+
+let statusMessage = null;
+
+function getRestartCountdown() {
+
+```
+const now = new Date();
+
+const restart = new Date();
+
+restart.setUTCHours(
+    RESTART_HOUR,
+    0,
+    0,
+    0
+);
+
+if (restart <= now)
+    restart.setUTCDate(
+        restart.getUTCDate() + 1
+    );
+
+const diff = restart - now;
+
+const hours =
+    Math.floor(diff / 3600000);
+
+const minutes =
+    Math.floor(
+        (diff % 3600000) / 60000
+    );
+
+return `${hours}h ${minutes}m`;
+```
+
+}
+
+client.once('ready', async () => {
+
+```
+console.log(
+    `Logged in as ${client.user.tag}`
+);
+
+const channel =
+    await client.channels.fetch(
+        CHANNEL_ID
+    );
+
+const messages =
+    await channel.messages.fetch({
+        limit: 20
+    });
+
+statusMessage =
+    messages.find(
+        m => m.author.id === client.user.id
+    );
+
+if (!statusMessage) {
+
+    statusMessage =
+        await channel.send({
+            content:
+                'Initializing status...'
+        });
+}
+
+updateStatus();
+
+setInterval(
+    updateStatus,
+    30000
+);
+```
+
+});
+
+async function updateStatus() {
+
+```
+try {
+
+    const start =
+        Date.now();
+
+    const state =
+        await Gamedig.query({
+            type: 'samp',
+            host: HOST,
+            port: PORT
+        });
+
+    const ping =
+        Date.now() - start;
+
+    const embed =
+        new EmbedBuilder()
+        .setColor('#00ff66')
+        .setTitle(
+            '🌆 ASTRIX CITY ROLEPLAY'
+        )
+        .setDescription(
+            'Unique Sandbox Built For Your Stories!'
+        )
+        .addFields(
+            {
+                name: '🟢 STATUS',
+                value: 'Online',
+                inline: true
+            },
+            {
+                name: '👥 PLAYERS',
+                value:
+                    `${state.players.length}/${state.maxplayers}`,
+                inline: true
+            },
+            {
+                name: '📡 PING',
+                value:
+                    `${ping} ms`,
+                inline: true
+            },
+            {
+                name: '🎮 GAMEMODE',
+                value:
+                    state.raw?.gamemode ||
+                    'Unknown'
+            },
+            {
+                name: '🗺️ MAP',
+                value:
+                    state.map ||
+                    'San Andreas'
+            },
+            {
+                name: '🌐 SERVER',
+                value:
+                    `${HOST}:${PORT}`
+            },
+            {
+                name: '⏰ NEXT RESTART',
+                value:
+                    getRestartCountdown()
+            },
+            {
+                name: '🎮 CONNECT',
+                value:
+                    '`connect play.astrixcity.com`'
+            }
+        )
+        .setFooter({
+            text:
+                'Last Updated'
+        })
+        .setTimestamp();
+
+    await statusMessage.edit({
+        content: '',
+        embeds: [embed]
+    });
+
+} catch {
+
+    const embed =
+        new EmbedBuilder()
+        .setColor('#ff0000')
+        .setTitle(
+            '🌆 ASTRIX CITY ROLEPLAY'
+        )
+        .setDescription(
+            'Unique Sandbox Built For Your Stories!'
+        )
+        .addFields(
+            {
+                name: '🔴 STATUS',
+                value:
+                    'Offline'
+            },
+            {
+                name: '🌐 SERVER',
+                value:
+                    `${HOST}:${PORT}`
+            }
+        )
+        .setTimestamp();
+
+    await statusMessage.edit({
+        content: '',
+        embeds: [embed]
+    });
+}
+```
+
+}
+
+client.login(TOKEN);
