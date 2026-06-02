@@ -31,6 +31,18 @@ const client = new Client({ intents: [] });
 
 let statusMessage = null;
 let consecutiveErrors = 0;
+let serverOnlineSince = null; // tracks when the server first came online
+
+function getUptime() {
+    if (!serverOnlineSince) return 'N/A';
+    const diff = Date.now() - serverOnlineSince;
+    const hours   = Math.floor(diff / 3_600_000);
+    const minutes = Math.floor((diff % 3_600_000) / 60_000);
+    const seconds = Math.floor((diff % 60_000) / 1_000);
+    if (hours > 0)   return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+}
 
 function getRestartCountdown() {
     const now = new Date();
@@ -181,17 +193,18 @@ async function updateStatus() {
         const ping = Date.now() - start;
 
         consecutiveErrors = 0;
+        if (!serverOnlineSince) serverOnlineSince = Date.now(); // start uptime timer on first success
 
         const embed = new EmbedBuilder()
-            .setColor(0x00FF00)
+            .setColor(0xFF6600) // orange = yellow + red mix
             .setTitle('**APEX CITY**')
             .addFields(
-                { name: '> STATUS', value: '```🟢 Online```', inline: true },
-                { name: '> PLAYERS', value: `\`\`\`${state.players}/${state.maxPlayers}\`\`\``, inline: true },
-                { name: '> NUMERICAL IP', value: `\`\`\`${HOST}:${PORT}\`\`\``, inline: false },
-                { name: '> ALLOWED CLIENT', value: '```0.3.7 , 0.3.DL```', inline: true },
-                { name: '> PING', value: `\`\`\`${ping}ms\`\`\``, inline: true },
-                { name: '> RESTART', value: `\`\`\`${getRestartCountdown()}\`\`\``, inline: true },
+                { name: '> STATUS',         value: '```🟢 Online```',                                    inline: true  },
+                { name: '> PLAYERS',        value: `\`\`\`${state.players}/${state.maxPlayers}\`\`\``,  inline: true  },
+                { name: '> ALLOWED CLIENT', value: '```0.3.7```',                                        inline: true  },
+                { name: '> PING',           value: `\`\`\`${ping}ms\`\`\``,                             inline: true  },
+                { name: '> UPTIME',         value: `\`\`\`${getUptime()}\`\`\``,                        inline: true  },
+                { name: '> CONNECT',        value: `\`\`\`${HOST}:${PORT}\`\`\``,                       inline: false },
             )
             .setImage('https://cdn.discordapp.com/attachments/1307289824851656714/1307376639490920539/1679989159197.png')
             .setFooter({
@@ -208,16 +221,18 @@ async function updateStatus() {
             console.error(`[updateStatus] Both query methods failed (x${consecutiveErrors}):`, err.message);
         }
 
+        serverOnlineSince = null; // reset uptime when server goes offline
+
         const embed = new EmbedBuilder()
-            .setColor(0xFF0000)
+            .setColor(0xFF6600) // orange = yellow + red mix
             .setTitle('**APEX CITY**')
             .addFields(
-                { name: '> STATUS', value: '```🔴 Offline```', inline: true },
-                { name: '> PLAYERS', value: '```N/A```', inline: true },
-                { name: '> NUMERICAL IP', value: `\`\`\`${HOST}:${PORT}\`\`\``, inline: false },
-                { name: '> ALLOWED CLIENT', value: '```0.3.7 , 0.3.DL```', inline: true },
-                { name: '> PING', value: '```N/A```', inline: true },
-                { name: '> RESTART', value: `\`\`\`${getRestartCountdown()}\`\`\``, inline: true },
+                { name: '> STATUS',         value: '```🔴 Offline```',              inline: true  },
+                { name: '> PLAYERS',        value: '```N/A```',                      inline: true  },
+                { name: '> ALLOWED CLIENT', value: '```0.3.7```',                    inline: true  },
+                { name: '> PING',           value: '```N/A```',                      inline: true  },
+                { name: '> UPTIME',         value: '```N/A```',                      inline: true  },
+                { name: '> CONNECT',        value: `\`\`\`${HOST}:${PORT}\`\`\``,   inline: false },
             )
             .setImage('https://cdn.discordapp.com/attachments/1307289824851656714/1307376639490920539/1679989159197.png')
             .setFooter({
