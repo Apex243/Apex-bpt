@@ -1,5 +1,6 @@
 const { Client, EmbedBuilder } = require('discord.js');
-const { GameDig } = require('gamedig'); // ✅ v5: named export
+const { GameDig } = require('gamedig');
+const dgram = require('dgram');
 
 const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
@@ -10,6 +11,7 @@ const RESTART_HOUR = 6; // UTC
 
 const UPDATE_INTERVAL_MS = 30_000;
 const MESSAGE_SEARCH_LIMIT = 50;
+const SAMP_TIMEOUT_MS = 5000;
 
 const client = new Client({ intents: [] });
 
@@ -26,6 +28,103 @@ function getRestartCountdown() {
     const hours = Math.floor(diff / 3_600_000);
     const minutes = Math.floor((diff % 3_600_000) / 60_000);
     return `${hours}h ${minutes}m`;
+}
+
+/**
+ * Method 1: Direct SA-MP/open.mp UDP query using the SA-MP query protocol.
+ * open.mp is fully backward-compatible with the SA-MP query protocol.
+ */
+function querySAMPDirect(host, port) {
+    return new Promise((resolve, reject) => {
+        const socket = dgram.createSocket('udp4');
+        const timeout = setTimeout(() => {
+            socket.close();
+            reject(new Error(`Direct UDP query timed out after ${SAMP_TIMEOUT_MS}ms`));
+        }, SAMP_TIMEOUT_MS);
+
+        const ipParts = host.split('.').map(Number);
+        const buf = Buffer.alloc(11);
+        buf.write('SAMP', 0, 'ascii');
+        buf[4] = ipParts[0];
+        buf[5] = ipParts[1];
+        buf[6] = ipParts[2];
+        buf[7] = ipParts[3];
+        buf.writeUInt16LE(port, 8);
+        buf[10] = 0x69; // 'i' = info query
+
+        socket.on('error', (err) => {
+            clearTimeout(timeout);
+            socket.close();
+            reject(err);
+        });
+
+        socket.on('message', (msg) => {
+            clearTimeout(timeout);
+            socket.close();
+
+            try {
+                if (msg.length < 11) return reject(new Error('Response too short'));
+
+                let offset = 11;
+                offset += 1; // passworded
+                const players    = msg.readUInt16LE(offset); offset += 2;
+                const maxPlayers = msg.readUInt16LE(offset); offset += 2;
+
+                const hostnameLen = msg.readUInt32LE(offset); offset += 4;
+                const hostname    = msg.slice(offset, offset + hostnameLen).toString('ascii'); offset += hostnameLen;
+
+                const gamemodeLen = msg.readUInt32LE(offset); offset += 4;
+                const gamemode    = msg.slice(offset, offset + gamemodeLen).toString('ascii');
+
+                resolve({ players, maxPlayers, hostname, gamemode });
+            } catch (e) {
+                reject(new Error('Parse error: ' + e.message));
+            }
+        });
+
+        socket.send(buf, 0, buf.length, port, host, (err) => {
+            if (err) {
+                clearTimeout(timeout);
+                socket.close();
+                reject(err);
+            }
+        });
+    });
+}
+
+/**
+ * Method 2: Gamedig query (supports open.mp via 'samp' type).
+ */
+async function queryViaGameDig(host, port) {
+    const state = await GameDig.query({
+        type: 'samp',
+        host,
+        port,
+        socketTimeout: SAMP_TIMEOUT_MS,
+        attemptTimeout: SAMP_TIMEOUT_MS + 1000,
+    });
+    return {
+        players:    state.players.length,
+        maxPlayers: state.maxplayers,
+        hostname:   state.name,
+        gamemode:   state.raw?.gamemode ?? 'Unknown',
+    };
+}
+
+/**
+ * Tries direct UDP first, falls back to GameDig if that fails.
+ */
+async function queryServer(host, port) {
+    try {
+        const result = await querySAMPDirect(host, port);
+        console.log(`[query] Direct UDP success — ${result.players}/${result.maxPlayers}`);
+        return result;
+    } catch (directErr) {
+        console.warn(`[query] Direct UDP failed (${directErr.message}), trying GameDig...`);
+        const result = await queryViaGameDig(host, port);
+        console.log(`[query] GameDig success — ${result.players}/${result.maxPlayers}`);
+        return result;
+    }
 }
 
 client.once('ready', async () => {
@@ -46,15 +145,9 @@ client.once('ready', async () => {
 async function updateStatus() {
     try {
         const start = Date.now();
+        const state = await queryServer(HOST, PORT);
+        const ping  = Date.now() - start;
 
-        // ✅ v5 API: GameDig.query is a static method on the named export
-        const state = await GameDig.query({
-            type: 'samp',
-            host: HOST,
-            port: PORT,
-        });
-
-        const ping = Date.now() - start;
         consecutiveErrors = 0;
 
         const embed = new EmbedBuilder()
@@ -62,11 +155,11 @@ async function updateStatus() {
             .setTitle('🌆 ASTRIX CITY ROLEPLAY')
             .setDescription('Unique Sandbox Built For Your Stories!')
             .addFields(
-                { name: '🟢 STATUS',       value: 'Online',                                      inline: true },
-                { name: '👥 PLAYERS',      value: `${state.players.length}/${state.maxplayers}`, inline: true },
-                { name: '📡 PING',         value: `${ping}ms`,                                   inline: true },
-                { name: '🎮 GAMEMODE',     value: state.raw?.gamemode ?? 'Unknown' },
-                { name: '🗺️ MAP',          value: state.map ?? 'San Andreas' },
+                { name: '🟢 STATUS',       value: 'Online',                                 inline: true },
+                { name: '👥 PLAYERS',      value: `${state.players}/${state.maxPlayers}`,   inline: true },
+                { name: '📡 PING',         value: `${ping}ms`,                              inline: true },
+                { name: '🎮 GAMEMODE',     value: state.gamemode || 'Unknown' },
+                { name: '🗺️ MAP',          value: 'San Andreas' },
                 { name: '🌐 SERVER',       value: `${HOST}:${PORT}` },
                 { name: '⏰ NEXT RESTART', value: getRestartCountdown() },
                 { name: '🎮 CONNECT',      value: `\`${HOST}:${PORT}\`` },
@@ -78,9 +171,8 @@ async function updateStatus() {
 
     } catch (err) {
         consecutiveErrors++;
-        // Log on first failure, then every 10th to avoid log spam
         if (consecutiveErrors === 1 || consecutiveErrors % 10 === 0) {
-            console.error(`[updateStatus] Query failed (x${consecutiveErrors}):`, err.message);
+            console.error(`[updateStatus] Both query methods failed (x${consecutiveErrors}):`, err.message);
         }
 
         const embed = new EmbedBuilder()
@@ -97,7 +189,6 @@ async function updateStatus() {
     }
 }
 
-// Edits the existing status message, or re-sends if it was deleted
 async function sendOrEdit(payload) {
     try {
         if (statusMessage) {
@@ -108,7 +199,6 @@ async function sendOrEdit(payload) {
         }
     } catch (err) {
         if (err.code === 10008) {
-            // Unknown Message — it was deleted, send a fresh one
             statusMessage = null;
             const channel = await client.channels.fetch(CHANNEL_ID);
             statusMessage = await channel.send(payload);
