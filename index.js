@@ -1,0 +1,8 @@
+{
+  "name": "apex-status-bot",
+  "version": "1.0.0",
+  "dependencies": {
+    "discord.js": "^14.21.0",
+    "gamedig": "^5.0.0"
+  }
+}
