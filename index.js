@@ -1,4 +1,4 @@
-const { Client, EmbedBuilder } = require('discord.js');
+const { Client, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { GameDig } = require('gamedig');
 const dgram = require('dgram');
 
@@ -8,10 +8,24 @@ const CHANNEL_ID = process.env.CHANNEL_ID;
 const HOST = '148.113.30.96';
 const PORT = 7044;
 const RESTART_HOUR = 6; // UTC
+const INSTAGRAM_URL = 'https://www.instagram.com/_apex_roleplay_?igsh=MXI3NnNkcXo1YXRreA=='; // ← change to your Instagram link
 
 const UPDATE_INTERVAL_MS = 30_000;
 const MESSAGE_SEARCH_LIMIT = 50;
 const SAMP_TIMEOUT_MS = 5000;
+
+function getButtons() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('copy_ip')
+            .setLabel('📋 Copy IP')
+            .setStyle(ButtonStyle.Primary), // sky blue (closest Discord has)
+        new ButtonBuilder()
+            .setLabel('📸 Instagram')
+            .setStyle(ButtonStyle.Link)
+            .setURL(INSTAGRAM_URL),
+    );
+}
 
 const client = new Client({ intents: [] });
 
@@ -67,14 +81,14 @@ function querySAMPDirect(host, port) {
 
                 let offset = 11;
                 offset += 1; // passworded
-                const players    = msg.readUInt16LE(offset); offset += 2;
+                const players = msg.readUInt16LE(offset); offset += 2;
                 const maxPlayers = msg.readUInt16LE(offset); offset += 2;
 
                 const hostnameLen = msg.readUInt32LE(offset); offset += 4;
-                const hostname    = msg.slice(offset, offset + hostnameLen).toString('ascii'); offset += hostnameLen;
+                const hostname = msg.slice(offset, offset + hostnameLen).toString('ascii'); offset += hostnameLen;
 
                 const gamemodeLen = msg.readUInt32LE(offset); offset += 4;
-                const gamemode    = msg.slice(offset, offset + gamemodeLen).toString('ascii');
+                const gamemode = msg.slice(offset, offset + gamemodeLen).toString('ascii');
 
                 resolve({ players, maxPlayers, hostname, gamemode });
             } catch (e) {
@@ -104,10 +118,10 @@ async function queryViaGameDig(host, port) {
         attemptTimeout: SAMP_TIMEOUT_MS + 1000,
     });
     return {
-        players:    state.players.length,
+        players: state.players.length,
         maxPlayers: state.maxplayers,
-        hostname:   state.name,
-        gamemode:   state.raw?.gamemode ?? 'Unknown',
+        hostname: state.name,
+        gamemode: state.raw?.gamemode ?? 'Unknown',
     };
 }
 
@@ -132,10 +146,28 @@ client.once('ready', async () => {
 
     const channel = await client.channels.fetch(CHANNEL_ID);
     const messages = await channel.messages.fetch({ limit: MESSAGE_SEARCH_LIMIT });
-    statusMessage = messages.find(m => m.author.id === client.user.id) ?? null;
 
-    if (!statusMessage) {
+    // Find ALL old bot messages to avoid duplicate embeds
+    const botMessages = messages.filter(m => m.author.id === client.user.id);
+
+    if (botMessages.size === 0) {
+        // No existing message — send a fresh one
         statusMessage = await channel.send({ content: 'Loading server status...' });
+        console.log('[ready] No existing status message found, sent a new one.');
+    } else {
+        // Keep the newest one, delete all others
+        const sorted = botMessages.sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+        statusMessage = sorted.first();
+
+        const extras = sorted.filter(m => m.id !== statusMessage.id);
+        if (extras.size > 0) {
+            console.log(`[ready] Found ${extras.size} duplicate bot message(s), deleting...`);
+            for (const [, msg] of extras) {
+                await msg.delete().catch(() => { }); // ignore if already deleted
+            }
+        }
+
+        console.log(`[ready] Using existing status message (id: ${statusMessage.id})`);
     }
 
     updateStatus();
@@ -146,28 +178,29 @@ async function updateStatus() {
     try {
         const start = Date.now();
         const state = await queryServer(HOST, PORT);
-        const ping  = Date.now() - start;
+        const ping = Date.now() - start;
 
         consecutiveErrors = 0;
 
         const embed = new EmbedBuilder()
-            .setColor('#00ff66')
-            .setTitle('🌆 ASTRIX CITY ROLEPLAY')
-            .setDescription('Unique Sandbox Built For Your Stories!')
+            .setColor(0x00FF00)
+            .setTitle('**APEX CITY**')
             .addFields(
-                { name: '🟢 STATUS',       value: 'Online',                                 inline: true },
-                { name: '👥 PLAYERS',      value: `${state.players}/${state.maxPlayers}`,   inline: true },
-                { name: '📡 PING',         value: `${ping}ms`,                              inline: true },
-                { name: '🎮 GAMEMODE',     value: state.gamemode || 'Unknown' },
-                { name: '🗺️ MAP',          value: 'San Andreas' },
-                { name: '🌐 SERVER',       value: `${HOST}:${PORT}` },
-                { name: '⏰ NEXT RESTART', value: getRestartCountdown() },
-                { name: '🎮 CONNECT',      value: `\`${HOST}:${PORT}\`` },
+                { name: '> STATUS', value: '```🟢 Online```', inline: true },
+                { name: '> PLAYERS', value: `\`\`\`${state.players}/${state.maxPlayers}\`\`\``, inline: true },
+                { name: '> NUMERICAL IP', value: `\`\`\`${HOST}:${PORT}\`\`\``, inline: false },
+                { name: '> ALLOWED CLIENT', value: '```0.3.7 , 0.3.DL```', inline: true },
+                { name: '> PING', value: `\`\`\`${ping}ms\`\`\``, inline: true },
+                { name: '> RESTART', value: `\`\`\`${getRestartCountdown()}\`\`\``, inline: true },
             )
-            .setFooter({ text: 'Last Updated' })
+            .setImage('https://cdn.discordapp.com/attachments/1307289824851656714/1307376639490920539/1679989159197.png')
+            .setFooter({
+                text: 'Sharing IP may lead you to a ban.',
+                iconURL: 'https://cdn.discordapp.com/attachments/1307289824851656714/1307376640451416084/omp-light.png',
+            })
             .setTimestamp();
 
-        await sendOrEdit({ content: '', embeds: [embed] });
+        await sendOrEdit({ content: '', embeds: [embed], components: [getButtons()] });
 
     } catch (err) {
         consecutiveErrors++;
@@ -176,18 +209,37 @@ async function updateStatus() {
         }
 
         const embed = new EmbedBuilder()
-            .setColor('#ff0000')
-            .setTitle('🌆 ASTRIX CITY ROLEPLAY')
-            .setDescription('Unique Sandbox Built For Your Stories!')
+            .setColor(0xFF0000)
+            .setTitle('**APEX CITY**')
             .addFields(
-                { name: '🔴 STATUS', value: 'Offline' },
-                { name: '🌐 SERVER', value: `${HOST}:${PORT}` },
+                { name: '> STATUS', value: '```🔴 Offline```', inline: true },
+                { name: '> PLAYERS', value: '```N/A```', inline: true },
+                { name: '> NUMERICAL IP', value: `\`\`\`${HOST}:${PORT}\`\`\``, inline: false },
+                { name: '> ALLOWED CLIENT', value: '```0.3.7 , 0.3.DL```', inline: true },
+                { name: '> PING', value: '```N/A```', inline: true },
+                { name: '> RESTART', value: `\`\`\`${getRestartCountdown()}\`\`\``, inline: true },
             )
+            .setImage('https://cdn.discordapp.com/attachments/1307289824851656714/1307376639490920539/1679989159197.png')
+            .setFooter({
+                text: 'Sharing IP may lead you to a ban.',
+                iconURL: 'https://cdn.discordapp.com/attachments/1307289824851656714/1307376640451416084/omp-light.png',
+            })
             .setTimestamp();
 
-        await sendOrEdit({ content: '', embeds: [embed] });
+        await sendOrEdit({ content: '', embeds: [embed], components: [getButtons()] });
     }
 }
+
+// Handle Copy IP button click
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+    if (interaction.customId === 'copy_ip') {
+        await interaction.reply({
+            content: `**Server IP:** \`${HOST}:${PORT}\`\nCopy the IP above and paste it in SA-MP / open.mp!`,
+            ephemeral: true,
+        });
+    }
+});
 
 async function sendOrEdit(payload) {
     try {
