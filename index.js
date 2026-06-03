@@ -1,25 +1,25 @@
-const { Client, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { GameDig } = require('gamedig');
 const dgram = require('dgram');
 const express = require('express');
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const TOKEN      = process.env.TOKEN;
+const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-const HOST           = '148.113.30.96';
-const SERVER_PORT    = 7044;                // SA-MP server port
-const RESTART_HOUR   = 6;                  // UTC
-const INSTAGRAM_URL  = 'https://www.instagram.com/_apex_roleplay_?igsh=MXI3NnNkcXo1YXRreA==';
-const YOUTUBE_URL    = 'https://youtube.com/@apex-roleplay?si=TIAHJ6zUcnWpeLm1';
+const HOST = '148.113.30.96';
+const SERVER_PORT = 7044;                // SA-MP server port
+const RESTART_HOUR = 6;                  // UTC
+const INSTAGRAM_URL = 'https://www.instagram.com/_apex_roleplay_?igsh=MXI3NnNkcXo1YXRreA==';
+const YOUTUBE_URL = 'https://youtube.com/@apex-roleplay?si=TIAHJ6zUcnWpeLm1';
 
-const UPDATE_INTERVAL_MS  = 30_000;
+const UPDATE_INTERVAL_MS = 30_000;
 const MESSAGE_SEARCH_LIMIT = 50;
-const SAMP_TIMEOUT_MS      = 5000;
+const SAMP_TIMEOUT_MS = 5000;
 
 // ─── Express web server (required by Render Web Services) ────────────────────
-const app        = express();
-const WEB_PORT   = process.env.PORT || 10000;
+const app = express();
+const WEB_PORT = process.env.PORT || 10000;
 
 app.get('/', (_req, res) => {
     res.send('Discord Bot Running');
@@ -61,22 +61,22 @@ function getButtons() {
 function getUptime() {
     if (!serverOnlineSince) return 'N/A';
     const diff = Date.now() - serverOnlineSince;
-    const hours   = Math.floor(diff / 3_600_000);
+    const hours = Math.floor(diff / 3_600_000);
     const minutes = Math.floor((diff % 3_600_000) / 60_000);
     const seconds = Math.floor((diff % 60_000) / 1_000);
-    if (hours   > 0) return `${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
     if (minutes > 0) return `${minutes}m ${seconds}s`;
     return `${seconds}s`;
 }
 
 function getRestartCountdown() {
-    const now     = new Date();
+    const now = new Date();
     const restart = new Date();
     restart.setUTCHours(RESTART_HOUR, 0, 0, 0);
     if (restart <= now) restart.setUTCDate(restart.getUTCDate() + 1);
 
-    const diff    = restart - now;
-    const hours   = Math.floor(diff / 3_600_000);
+    const diff = restart - now;
+    const hours = Math.floor(diff / 3_600_000);
     const minutes = Math.floor((diff % 3_600_000) / 60_000);
     return `${hours}h ${minutes}m`;
 }
@@ -88,14 +88,14 @@ function getRestartCountdown() {
  */
 function querySAMPDirect(host, port) {
     return new Promise((resolve, reject) => {
-        const socket  = dgram.createSocket('udp4');
+        const socket = dgram.createSocket('udp4');
         const timeout = setTimeout(() => {
             socket.close();
             reject(new Error(`Direct UDP query timed out after ${SAMP_TIMEOUT_MS}ms`));
         }, SAMP_TIMEOUT_MS);
 
         const ipParts = host.split('.').map(Number);
-        const buf     = Buffer.alloc(11);
+        const buf = Buffer.alloc(11);
         buf.write('SAMP', 0, 'ascii');
         buf[4] = ipParts[0];
         buf[5] = ipParts[1];
@@ -117,16 +117,16 @@ function querySAMPDirect(host, port) {
             try {
                 if (msg.length < 11) return reject(new Error('Response too short'));
 
-                let offset    = 11;
-                offset       += 1; // passworded
-                const players    = msg.readUInt16LE(offset); offset += 2;
+                let offset = 11;
+                offset += 1; // passworded
+                const players = msg.readUInt16LE(offset); offset += 2;
                 const maxPlayers = msg.readUInt16LE(offset); offset += 2;
 
                 const hostnameLen = msg.readUInt32LE(offset); offset += 4;
-                const hostname    = msg.slice(offset, offset + hostnameLen).toString('ascii'); offset += hostnameLen;
+                const hostname = msg.slice(offset, offset + hostnameLen).toString('ascii'); offset += hostnameLen;
 
                 const gamemodeLen = msg.readUInt32LE(offset); offset += 4;
-                const gamemode    = msg.slice(offset, offset + gamemodeLen).toString('ascii');
+                const gamemode = msg.slice(offset, offset + gamemodeLen).toString('ascii');
 
                 resolve({ players, maxPlayers, hostname, gamemode });
             } catch (e) {
@@ -156,10 +156,10 @@ async function queryViaGameDig(host, port) {
         attemptTimeout: SAMP_TIMEOUT_MS + 1000,
     });
     return {
-        players:    state.players.length,
+        players: state.players.length,
         maxPlayers: state.maxplayers,
-        hostname:   state.name,
-        gamemode:   state.raw?.gamemode ?? 'Unknown',
+        hostname: state.name,
+        gamemode: state.raw?.gamemode ?? 'Unknown',
     };
 }
 
@@ -182,7 +182,7 @@ async function queryServer(host, port) {
 // ─── Discord client ───────────────────────────────────────────────────────────
 const client = new Client({ intents: [] });
 
-let statusMessage     = null;
+let statusMessage = null;
 let consecutiveErrors = 0;
 let serverOnlineSince = null;
 
@@ -238,26 +238,26 @@ async function updateStatus() {
     try {
         const start = Date.now();
         const state = await queryServer(HOST, SERVER_PORT);
-        const ping  = Date.now() - start;
+        const ping = Date.now() - start;
 
         consecutiveErrors = 0;
         if (!serverOnlineSince) serverOnlineSince = Date.now();
 
         const embed = new EmbedBuilder()
-            .setColor(0xFF6600)
+            .setColor(0x00FF00)
             .setTitle('**APEX CITY**')
             .addFields(
-                { name: '> STATUS',         value: '```🟢 Online```',                         inline: true  },
-                { name: '> PLAYERS',        value: `\`\`\`${state.players}/${state.maxPlayers}\`\`\``, inline: true  },
-              //  { name: '\u200b',            value: '\u200b',                                   inline: false },
-                { name: '> PING',           value: `\`\`\`${ping}ms\`\`\``,                    inline: true  },
-                { name: '> UPTIME',         value: `\`\`\`${getUptime()}\`\`\``,               inline: true  },
-                { name: '> ALLOWED CLIENT', value: '```0.3.7```',                              inline: false },
-                { name: '> CONNECT',        value: `\`\`\`${HOST}:${SERVER_PORT}\`\`\``,       inline: false },
+                { name: '> STATUS', value: '```🟢 Online```', inline: true },
+                { name: '> PLAYERS', value: `\`\`\`${state.players}/${state.maxPlayers}\`\`\``, inline: true },
+                //  { name: '\u200b',            value: '\u200b',                                   inline: false },
+                { name: '> PING', value: `\`\`\`${ping}ms\`\`\``, inline: true },
+                { name: '> UPTIME', value: `\`\`\`${getUptime()}\`\`\``, inline: true },
+                { name: '> CLIENT', value: '```0.3.7,0.3.DL```', inline: true },
+                { name: '> CONNECT', value: `\`\`\`${HOST}:${SERVER_PORT}\`\`\``, inline: false },
             )
-            .setImage('https://cdn.discordapp.com/attachments/1397147173858185316/1397251153959321681/1679989159197.png?ex=6a20fc4a&is=6a1faaca&hm=626b04884d37132eb224296d907b18ed1dbe1f21a51d577a67cf0ca16564b347')
+            .setImage('https://cdn.discordapp.com/attachments/1308463995912454195/1511639324171698228/IP_BANNER.png?ex=6a212f53&is=6a1fddd3&hm=c48e8ec6fa89d4cefe3b57f49d5bb0c60b74ea237eb22c96f82792a854aa8004')
             .setFooter({
-                text:    'Sharing IP may lead you to a ban.',
+                text: 'Sharing IP may lead you to a ban.',
                 iconURL: 'https://cdn.discordapp.com/attachments/1397147173858185316/1397251192391860264/apex_5499BFE.gif?ex=6a20fc53&is=6a1faad3&hm=e12ddec136d099f7346b30fcc1039a1be3f5e63585c83af3b51a6a64b9ba2426',
             })
             .setTimestamp();
@@ -276,17 +276,17 @@ async function updateStatus() {
             .setColor(0xFF0000)
             .setTitle('**APEX CITY**')
             .addFields(
-                { name: '> STATUS',         value: '```🔴 Offline```', inline: true  },
-                { name: '> PLAYERS',        value: '```N/A```',         inline: true  },
-               // { name: '\u200b',            value: '\u200b',            inline: false },
-                { name: '> PING',           value: '```N/A```',         inline: true  },
-                { name: '> UPTIME',         value: '```N/A```',         inline: true  },
-                { name: '> ALLOWED CLIENT', value: '```0.3.7```',       inline: false },
-                { name: '> CONNECT',        value: `\`\`\`${HOST}:${SERVER_PORT}\`\`\``, inline: false },
+                { name: '> STATUS', value: '```🔴 Offline```', inline: true },
+                { name: '> PLAYERS', value: '```N/A```', inline: true },
+                // { name: '\u200b',            value: '\u200b',            inline: false },
+                { name: '> PING', value: '```N/A```', inline: true },
+                { name: '> UPTIME', value: '```N/A```', inline: true },
+                { name: '> CLIENT', value: '```0.3.7,0.3.DL```', inline: true },
+                { name: '> CONNECT', value: `\`\`\`${HOST}:${SERVER_PORT}\`\`\``, inline: false },
             )
-            .setImage('https://cdn.discordapp.com/attachments/1397147173858185316/1397251153959321681/1679989159197.png?ex=6a20fc4a&is=6a1faaca&hm=626b04884d37132eb224296d907b18ed1dbe1f21a51d577a67cf0ca16564b347')
+            .setImage('https://cdn.discordapp.com/attachments/1308463995912454195/1511639324171698228/IP_BANNER.png?ex=6a212f53&is=6a1fddd3&hm=c48e8ec6fa89d4cefe3b57f49d5bb0c60b74ea237eb22c96f82792a854aa8004')
             .setFooter({
-                text:    'Sharing IP may lead you to a ban.',
+                text: 'Sharing IP may lead you to a ban.',
                 iconURL: 'https://cdn.discordapp.com/attachments/1397147173858185316/1397251192391860264/apex_5499BFE.gif?ex=6a20fc53&is=6a1faad3&hm=e12ddec136d099f7346b30fcc1039a1be3f5e63585c83af3b51a6a64b9ba2426',
             })
             .setTimestamp();
@@ -306,7 +306,7 @@ client.on('interactionCreate', async (interaction) => {
                 `\`\`\`${HOST}:${SERVER_PORT}\`\`\``,
                 '-# Paste it in SA-MP / open.mp connect box.',
             ].join('\n'),
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
         });
     }
 });
