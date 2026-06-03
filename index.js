@@ -19,14 +19,14 @@ const SAMP_TIMEOUT_MS      = 5000;
 
 // ─── Express web server (required by Render Web Services) ────────────────────
 const app        = express();
-const WEB_PORT   = process.env.PORT || 3000;
+const WEB_PORT   = process.env.PORT || 10000;
 
 app.get('/', (_req, res) => {
     res.send('Discord Bot Running');
 });
 
-app.listen(WEB_PORT, () => {
-    console.log(`[web] Express server listening on port ${WEB_PORT}`);
+app.listen(WEB_PORT, '0.0.0.0', () => {
+    console.log(`[web] Express server listening on port ${WEB_PORT} on 0.0.0.0`);
 });
 
 // ─── Unhandled rejection / exception safety net ──────────────────────────────
